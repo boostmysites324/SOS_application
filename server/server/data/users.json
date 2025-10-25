@@ -1,0 +1,37 @@
+[
+  {
+    "id": "u_1761115617490",
+    "email": "test@example.com",
+    "employeeId": "EMP-1001",
+    "name": "Test User",
+    "password": "$2b$10$pIc8GlPfhd75pvjlAcAnWeZMNypgtai/Ye0BsrVUvCv0ph0QMpjSG",
+    "createdAt": "2025-10-22T06:46:57.490Z"
+  },
+  {
+    "id": "u_1761115720501",
+    "email": "Viaanbindra@gmail.com",
+    "employeeId": "21",
+    "name": "Viaan Bindra",
+    "password": "$2b$10$KrH.IT4rFt4xKYSEouIMguolmO.MqOEmO3iN3cg6gU3foiKgrOVhu",
+    "createdAt": "2025-10-22T06:48:40.501Z"
+  },
+  {
+    "id": "u_1761115786156",
+    "email": "lnvb200@gmail.com",
+    "employeeId": "212",
+    "name": "Viaan Bindra",
+    "password": "$2b$10$QWctGn1JRF1H08uXezGjde2Hl6KRGeddDatIi7chagazGknPAaKKe",
+    "createdAt": "2025-10-22T06:49:46.156Z"
+  },
+  {
+    "id": "u_1761116282212",
+    "email": "viaan9732@gmail.com",
+    "employeeId": "242",
+    "name": "Piyush",
+    "password": "$2b$10$q5oNtNzEvMfjtWfZwFEsjeScjHuhczirDEupRygjeqR8DNG4bzQ4e",
+    "emailVerified": false,
+    "verificationToken": "fc6fc041fed4937706633d3a5504a16dfef6d0a3f220d21bde7fce45679a87f3",
+    "verificationTokenExpiry": "2025-10-23T06:58:02.213Z",
+    "createdAt": "2025-10-22T06:58:02.213Z"
+  }
+]
