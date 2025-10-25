@@ -1,5 +1,50 @@
-[]
-
-
-
-
+[
+  {
+    "id": "user_1",
+    "email": "demo@example.com",
+    "password": "$2b$10$93jlqpUSpQe.AYMPQqCsFu3Gxw89vZIgC9zHOpWKhzXgaJfY9f1Jm",
+    "name": "Demo User",
+    "employeeId": "EMP-DEMO",
+    "emailVerified": true,
+    "verificationToken": null,
+    "verificationExpires": null,
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "user_2",
+    "email": "john.doe@example.com",
+    "password": "$2b$10$93jlqpUSpQe.AYMPQqCsFu3Gxw89vZIgC9zHOpWKhzXgaJfY9f1Jm",
+    "name": "John Doe",
+    "employeeId": "EMP-1001",
+    "emailVerified": true,
+    "verificationToken": null,
+    "verificationExpires": null,
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "user_3",
+    "email": "jane.smith@example.com",
+    "password": "$2b$10$93jlqpUSpQe.AYMPQqCsFu3Gxw89vZIgC9zHOpWKhzXgaJfY9f1Jm",
+    "name": "Jane Smith",
+    "employeeId": "EMP-1002",
+    "emailVerified": true,
+    "verificationToken": null,
+    "verificationExpires": null,
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "user_4",
+    "email": "mike.johnson@example.com",
+    "password": "$2b$10$93jlqpUSpQe.AYMPQqCsFu3Gxw89vZIgC9zHOpWKhzXgaJfY9f1Jm",
+    "name": "Mike Johnson",
+    "employeeId": "EMP-1003",
+    "emailVerified": true,
+    "verificationToken": null,
+    "verificationExpires": null,
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  }
+]

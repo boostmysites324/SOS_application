@@ -33,5 +33,27 @@
     "verificationToken": "fc6fc041fed4937706633d3a5504a16dfef6d0a3f220d21bde7fce45679a87f3",
     "verificationTokenExpiry": "2025-10-23T06:58:02.213Z",
     "createdAt": "2025-10-22T06:58:02.213Z"
+  },
+  {
+    "id": "u_1761376743810",
+    "email": "john.doe@example.com",
+    "employeeId": "234",
+    "name": "john",
+    "password": "$2b$10$L/0EU0EC2JBTplCWTTimNOKaUWtL9kTvbKAvpcizN9Av6nvwielbW",
+    "emailVerified": false,
+    "verificationToken": "ad725c0013417b2814665d7c68bc9b5f8b2865ca8b88f68a2211ecd9235fef18",
+    "verificationTokenExpiry": "2025-10-26T07:19:03.810Z",
+    "createdAt": "2025-10-25T07:19:03.812Z"
+  },
+  {
+    "id": "u_1761376791463",
+    "email": "viaan9885@gmail.com",
+    "employeeId": "raj123",
+    "name": "raj",
+    "password": "$2b$10$z05ejZchYd6qIovtfV0zjuarJdHpe8pNtMscxFbBT.T.cOVor3aTy",
+    "emailVerified": false,
+    "verificationToken": "f7e73952187878aafe9d4c3b390d05bd22e8dcacf1e6fe71b5021ee5ea915cd5",
+    "verificationTokenExpiry": "2025-10-26T07:19:51.463Z",
+    "createdAt": "2025-10-25T07:19:51.463Z"
   }
 ]
