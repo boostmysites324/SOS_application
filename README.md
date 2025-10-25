@@ -4,6 +4,17 @@ A complete **full-stack emergency alert application** with **React frontend** an
 
 🔗 **Repository:** [github.com/boostmysites324/SOS_application](https://github.com/boostmysites324/SOS_application)
 
+## 🔑 Quick Demo Credentials
+
+```
+Email: demo@example.com
+Password: Demo@123
+Employee ID: EMP-DEMO
+```
+
+**Setup:** Run `./setup-demo.ps1` (Windows) or `./setup-demo.sh` (Mac/Linux)  
+**See:** [DEMO_CREDENTIALS.md](./DEMO_CREDENTIALS.md) for more test accounts
+
 ---
 
 ## ✨ Features
