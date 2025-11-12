@@ -4,16 +4,29 @@ import { Auth } from '../../lib/api';
 
 export default function Login() {
   const navigate = useNavigate();
-  const [employeeId, setEmployeeId] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!identifier || !password) {
+      alert('Please enter your email/employee ID and password');
+      return;
+    }
+    
+    setLoading(true);
     try {
-      await Auth.login(employeeId, password);
+      await Auth.login(identifier, password);
       navigate('/home-screen');
     } catch (err: any) {
-      alert(err.message || 'Login failed');
+      if (err.message?.includes('Email not verified')) {
+        alert('Please verify your email before logging in. Check your email for the verification link.');
+      } else {
+        alert(err.message || 'Login failed. Please check your credentials.');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -33,7 +46,7 @@ export default function Login() {
           
           <div className="mb-5">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Employee ID
+              Email or Employee ID
             </label>
             <div className="relative">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center">
@@ -41,10 +54,10 @@ export default function Login() {
               </div>
               <input
                 type="text"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-none rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter your employee ID"
+                placeholder="Enter your email or employee ID"
                 required
               />
             </div>
@@ -73,9 +86,10 @@ export default function Login() {
 
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-semibold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-semibold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Login
+            {loading ? 'Logging in...' : 'Login'}
           </button>
 
           <div className="mt-6 text-center">

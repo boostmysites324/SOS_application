@@ -19,6 +19,20 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, []);
 
+  // Check for active SOS on mount
+  useEffect(() => {
+    SOS.active()
+      .then((activeAlert) => {
+        if (activeAlert) {
+          localStorage.setItem('currentAlert', JSON.stringify(activeAlert));
+          navigate('/sos-active');
+        }
+      })
+      .catch(() => {
+        // No active SOS or error - continue to home screen
+      });
+  }, [navigate]);
+
   const handlePressStart = () => {
     setIsPressed(true);
     let currentProgress = 0;
@@ -29,18 +43,39 @@ export default function HomeScreen() {
       
       if (currentProgress >= 100) {
         clearInterval(timer);
-        SOS.start()
-          .then(() => {
-            const alertData = {
-              id: Date.now().toString(),
-              timestamp: new Date().toISOString(),
-              location: 'Main Building, Floor 3',
-              status: 'active',
-            };
-            localStorage.setItem('currentAlert', JSON.stringify(alertData));
-            navigate('/sos-active');
-          })
-          .catch((e: any) => alert(e.message || 'Failed to start SOS'));
+        // Get current location
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              SOS.start({
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude
+              })
+                .then((alertData) => {
+                  localStorage.setItem('currentAlert', JSON.stringify(alertData));
+                  navigate('/sos-active');
+                })
+                .catch((e: any) => alert(e.message || 'Failed to start SOS'));
+            },
+            () => {
+              // If location fails, start SOS without location
+              SOS.start()
+                .then((alertData) => {
+                  localStorage.setItem('currentAlert', JSON.stringify(alertData));
+                  navigate('/sos-active');
+                })
+                .catch((e: any) => alert(e.message || 'Failed to start SOS'));
+            }
+          );
+        } else {
+          // Geolocation not supported
+          SOS.start()
+            .then((alertData) => {
+              localStorage.setItem('currentAlert', JSON.stringify(alertData));
+              navigate('/sos-active');
+            })
+            .catch((e: any) => alert(e.message || 'Failed to start SOS'));
+        }
       }
     }, 100);
     
@@ -180,7 +215,7 @@ export default function HomeScreen() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Minimalist Header */}
-      <div className="fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-b border-gray-200/80 z-10">
+      <div className="fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-b border-gray-200/80 z-50">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

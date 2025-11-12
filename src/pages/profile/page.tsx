@@ -8,6 +8,7 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [userRole, setUserRole] = useState<string>('employee');
   const [profileData, setProfileData] = useState({
     fullName: 'User',
     employeeId: 'EMP-0001',
@@ -19,6 +20,10 @@ export default function ProfilePage() {
       navigate('/login');
       return;
     }
+    const currentUser = Auth.user();
+    if (currentUser) {
+      setUserRole(currentUser.role || 'employee');
+    }
     Profile.get()
       .then((u: any) => {
         setProfileData({
@@ -26,6 +31,7 @@ export default function ProfilePage() {
           employeeId: u.employeeId || u.id || 'EMP-0001',
           email: u.email || 'user@example.com',
         });
+        if (u.role) setUserRole(u.role);
       })
       .catch(() => {});
   }, []);
@@ -147,6 +153,21 @@ export default function ProfilePage() {
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-gray-800 mb-3">Account Settings</h3>
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            {userRole === 'admin' && (
+              <button 
+                onClick={() => navigate('/admin')}
+                className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors border-b border-gray-100"
+              >
+                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                  <i className="ri-dashboard-line text-lg text-purple-600"></i>
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-medium text-gray-800">Admin Dashboard</p>
+                  <p className="text-xs text-gray-500">Manage users and alerts</p>
+                </div>
+                <i className="ri-arrow-right-s-line text-xl text-gray-400"></i>
+              </button>
+            )}
             <button 
               onClick={() => handleMenuClick('edit')}
               className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors border-b border-gray-100"

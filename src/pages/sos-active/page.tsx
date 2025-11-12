@@ -8,14 +8,43 @@ export default function SosActive() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [alertTime, setAlertTime] = useState<Date>(new Date());
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [alertData, setAlertData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get alert data from localStorage
-    const alertData = localStorage.getItem('currentAlert');
-    if (alertData) {
-      const parsed = JSON.parse(alertData);
-      setAlertTime(new Date(parsed.timestamp));
-    }
+    // Fetch active alert from backend
+    SOS.active()
+      .then((activeAlert) => {
+        if (activeAlert) {
+          setAlertData(activeAlert);
+          setAlertTime(new Date(activeAlert.startedAt || Date.now()));
+          localStorage.setItem('currentAlert', JSON.stringify(activeAlert));
+        } else {
+          // No active alert, check localStorage as fallback
+          const stored = localStorage.getItem('currentAlert');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            setAlertData(parsed);
+            setAlertTime(new Date(parsed.startedAt || parsed.timestamp || Date.now()));
+          } else {
+            // No alert found, redirect to home
+            navigate('/home-screen');
+          }
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        // Error fetching, check localStorage as fallback
+        const stored = localStorage.getItem('currentAlert');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setAlertData(parsed);
+          setAlertTime(new Date(parsed.startedAt || parsed.timestamp || Date.now()));
+        } else {
+          navigate('/home-screen');
+        }
+        setLoading(false);
+      });
 
     // Update elapsed time every second
     const timer = setInterval(() => {
@@ -23,15 +52,17 @@ export default function SosActive() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [navigate]);
 
   const handleCancelAlert = async () => {
     try {
       await SOS.cancel();
-    } catch {}
-    localStorage.removeItem('currentAlert');
-    setShowCancelConfirm(false);
-    navigate('/home-screen');
+      localStorage.removeItem('currentAlert');
+      setShowCancelConfirm(false);
+      navigate('/home-screen');
+    } catch (err: any) {
+      alert(err.message || 'Failed to cancel alert');
+    }
   };
 
   const formatElapsedTime = (seconds: number) => {
@@ -47,6 +78,17 @@ export default function SosActive() {
     const secs = remaining % 60;
     return remaining > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : 'Arriving now';
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading alert...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -90,7 +132,7 @@ export default function SosActive() {
               </div>
               <div className="flex items-center gap-2">
                 <i className="ri-map-pin-2-line text-sm text-gray-600"></i>
-                <p className="text-xs text-gray-600">Main Building, Floor 3</p>
+                <p className="text-xs text-gray-600">{alertData?.address || 'Location being determined...'}</p>
               </div>
             </div>
           </div>
