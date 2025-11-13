@@ -7,6 +7,7 @@ import HomeScreen from '../pages/home-screen/page';
 import SosActive from '../pages/sos-active/page';
 import Notifications from '../pages/notifications/page';
 import Profile from '../pages/profile/page';
+import AdminDashboard from '../pages/admin/page';
 import NotFound from '../pages/NotFound';
 
 // Auth guard component
@@ -59,6 +60,10 @@ const routes: RouteObject[] = [
   {
     path: '/profile',
     element: <AuthGuard><Profile /></AuthGuard>
+  },
+  {
+    path: '/admin',
+    element: <AuthGuard><AdminDashboard /></AuthGuard>
   },
   {
     path: '*',

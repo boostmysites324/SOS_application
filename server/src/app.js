@@ -2,6 +2,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+
 // Load env from server/.env (relative) and also allow default .env
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 require('dotenv').config();
@@ -10,6 +11,7 @@ const authRoutes = require('./routes/auth');
 const profileRoutes = require('./routes/profile');
 const notificationsRoutes = require('./routes/notifications');
 const sosRoutes = require('./routes/sos');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 
@@ -36,14 +38,17 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(morgan('dev'));
 
+// Health check endpoint
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'sos-backend' });
 });
 
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/sos', sosRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Fallback 404
 app.use((req, res) => {
@@ -51,6 +56,4 @@ app.use((req, res) => {
 });
 
 module.exports = app;
-
-
 

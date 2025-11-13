@@ -19,28 +19,17 @@ export default function Notifications() {
   useEffect(() => {
     ApiNotifications.list()
       .then((items: any[]) => {
-        const mapped: Alert[] = items.map((n) => {
-          let type: 'emergency' | 'test' | 'info' | 'resolved' = 'info';
-          if (n.type === 'sos') type = 'emergency';
-          else if (n.type === 'warning') type = 'emergency';
-          else if (n.type === 'alert') type = 'emergency';
-          else if (n.type === 'info') type = 'info';
-          
-          return {
-            id: n.id,
-            type: type,
-            title: n.title || (n.type === 'sos' ? 'SOS Alert' : 'Notification'),
-            description: n.message || 'Update',
-            timestamp: new Date(n.created_at || n.createdAt || Date.now()).toLocaleString(),
-            location: undefined,
-          };
-        });
+        const mapped: Alert[] = items.map((n) => ({
+          id: n.id,
+          type: n.type === 'sos_started' ? 'emergency' : 'info',
+          title: n.type === 'sos_started' ? 'Emergency Alert Sent' : 'Notification',
+          description: n.message || 'Update',
+          timestamp: new Date(n.createdAt || Date.now()).toLocaleString(),
+          location: undefined,
+        }));
         setAlerts(mapped);
       })
-      .catch((err) => {
-        console.error('Failed to load notifications:', err);
-        setAlerts([]);
-      });
+      .catch(() => setAlerts([]));
   }, []);
 
   const getAlertIcon = (type: string) => {
@@ -68,16 +57,7 @@ export default function Notifications() {
   };
 
   const markAsRead = (alertId: string) => {
-    ApiNotifications.markRead(alertId)
-      .then(() => {
-        // Update local state to mark as read
-        setAlerts(prev => prev.map(alert => 
-          alert.id === alertId ? { ...alert } : alert
-        ));
-      })
-      .catch((err) => {
-        console.error('Failed to mark as read:', err);
-      });
+    ApiNotifications.markRead(alertId).catch(() => {});
   };
 
   return (
