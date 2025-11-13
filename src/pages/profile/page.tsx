@@ -4,10 +4,30 @@ import { useNavigate } from 'react-router-dom';
 import { Auth, Profile } from '../../lib/api';
 import BottomNav from '../../components/feature/BottomNav';
 
+interface EmergencyContact {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  relationship: string | null;
+  is_primary: boolean;
+  created_at: string;
+}
+
 export default function ProfilePage() {
   const navigate = useNavigate();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showContactsModal, setShowContactsModal] = useState(false);
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  const [editingContact, setEditingContact] = useState<EmergencyContact | null>(null);
+  const [contactForm, setContactForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    relationship: '',
+    isPrimary: false
+  });
   const [userRole, setUserRole] = useState<string>('employee');
   const [profileData, setProfileData] = useState({
     fullName: 'User',
@@ -34,7 +54,19 @@ export default function ProfilePage() {
         if (u.role) setUserRole(u.role);
       })
       .catch(() => {});
+    
+    // Load emergency contacts
+    loadEmergencyContacts();
   }, []);
+
+  const loadEmergencyContacts = async () => {
+    try {
+      const contacts = await Profile.getEmergencyContacts();
+      setEmergencyContacts(contacts);
+    } catch (error) {
+      console.error('Failed to load emergency contacts:', error);
+    }
+  };
 
   const handleLogout = () => {
     Auth.logout();
@@ -56,7 +88,8 @@ export default function ProfilePage() {
         setShowEditProfile(true);
         break;
       case 'contacts':
-        alert('Emergency Contacts\n\nThis feature would allow you to manage your emergency contact list.');
+        setShowContactsModal(true);
+        loadEmergencyContacts();
         break;
       case 'notifications':
         alert('Notification Settings\n\nThis feature would allow you to configure alert preferences.');
@@ -69,6 +102,49 @@ export default function ProfilePage() {
         break;
       default:
         break;
+    }
+  };
+
+  const handleSaveContact = async () => {
+    if (!contactForm.name.trim()) {
+      alert('Name is required');
+      return;
+    }
+    
+    try {
+      if (editingContact) {
+        await Profile.updateEmergencyContact(editingContact.id, contactForm);
+      } else {
+        await Profile.createEmergencyContact(contactForm);
+      }
+      // Reset form after saving
+      setEditingContact(null);
+      setContactForm({ name: '', email: '', phone: '', relationship: '', isPrimary: false });
+      // Reload contacts to show the new/updated contact
+      await loadEmergencyContacts();
+    } catch (error: any) {
+      alert(error.message || 'Failed to save contact');
+    }
+  };
+
+  const handleEditContact = (contact: EmergencyContact) => {
+    setEditingContact(contact);
+    setContactForm({
+      name: contact.name,
+      email: contact.email || '',
+      phone: contact.phone || '',
+      relationship: contact.relationship || '',
+      isPrimary: contact.is_primary
+    });
+  };
+
+  const handleDeleteContact = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this emergency contact?')) return;
+    try {
+      await Profile.deleteEmergencyContact(id);
+      await loadEmergencyContacts();
+    } catch (error: any) {
+      alert(error.message || 'Failed to delete contact');
     }
   };
 
@@ -191,7 +267,9 @@ export default function ProfilePage() {
               </div>
               <div className="flex-1 text-left">
                 <p className="text-sm font-medium text-gray-800">Emergency Contacts</p>
-                <p className="text-xs text-gray-500">Manage your contacts</p>
+                <p className="text-xs text-gray-500">
+                  {emergencyContacts.length > 0 ? `${emergencyContacts.length} contact${emergencyContacts.length > 1 ? 's' : ''}` : 'Manage your contacts'}
+                </p>
               </div>
               <i className="ri-arrow-right-s-line text-xl text-gray-400"></i>
             </button>
@@ -306,6 +384,164 @@ export default function ProfilePage() {
               >
                 Save
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Emergency Contacts Modal */}
+      {showContactsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center px-6 z-50 overflow-y-auto py-8">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-gray-800">Emergency Contacts</h3>
+              <button
+                onClick={() => {
+                  setShowContactsModal(false);
+                  setEditingContact(null);
+                  setContactForm({ name: '', email: '', phone: '', relationship: '', isPrimary: false });
+                }}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+              >
+                <i className="ri-close-line text-xl text-gray-600"></i>
+              </button>
+            </div>
+
+            {/* Contacts List */}
+            {emergencyContacts.length > 0 ? (
+              <div className="mb-6 space-y-3">
+                {emergencyContacts.map((contact) => (
+                  <div key={contact.id} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-semibold text-gray-800">{contact.name}</h4>
+                          {contact.is_primary && (
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                              Primary
+                            </span>
+                          )}
+                        </div>
+                        {contact.relationship && (
+                          <p className="text-xs text-gray-500 mb-1">{contact.relationship}</p>
+                        )}
+                        {contact.phone && (
+                          <p className="text-sm text-gray-600 flex items-center gap-1">
+                            <i className="ri-phone-line"></i> {contact.phone}
+                          </p>
+                        )}
+                        {contact.email && (
+                          <p className="text-sm text-gray-600 flex items-center gap-1">
+                            <i className="ri-mail-line"></i> {contact.email}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEditContact(contact)}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition-colors"
+                        >
+                          <i className="ri-edit-line text-sm"></i>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteContact(contact.id)}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
+                        >
+                          <i className="ri-delete-bin-line text-sm"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mb-6 text-center py-8">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <i className="ri-user-add-line text-2xl text-gray-400"></i>
+                </div>
+                <p className="text-gray-500 text-sm">No emergency contacts yet</p>
+                <p className="text-gray-400 text-xs mt-1">Add your first contact below</p>
+              </div>
+            )}
+
+            {/* Add/Edit Contact Form */}
+            <div className="border-t border-gray-200 pt-6">
+              <h4 className="text-lg font-semibold text-gray-800 mb-4">
+                {editingContact ? 'Edit Contact' : 'Add New Contact'}
+              </h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <input
+                    type="text"
+                    value={contactForm.name}
+                    onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
+                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="John Doe"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <input
+                    type="tel"
+                    value={contactForm.phone}
+                    onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
+                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="+1234567890"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={contactForm.email}
+                    onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="john@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Relationship</label>
+                  <input
+                    type="text"
+                    value={contactForm.relationship}
+                    onChange={(e) => setContactForm({ ...contactForm, relationship: e.target.value })}
+                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Family, Friend, Colleague, etc."
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isPrimary"
+                    checked={contactForm.isPrimary}
+                    onChange={(e) => setContactForm({ ...contactForm, isPrimary: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="isPrimary" className="text-sm text-gray-700">
+                    Set as primary contact
+                  </label>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                {editingContact && (
+                  <button
+                    onClick={() => {
+                      setEditingContact(null);
+                      setContactForm({ name: '', email: '', phone: '', relationship: '', isPrimary: false });
+                    }}
+                    className="flex-1 py-2.5 px-4 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+                <button
+                  onClick={handleSaveContact}
+                  className="flex-1 py-2.5 px-4 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+                >
+                  {editingContact ? 'Update Contact' : 'Add Contact'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -61,6 +61,14 @@ export const Auth = {
 export const Profile = {
   get: () => api(`/api/profile`, { auth: true }),
   update: (payload: { name?: string }) => api(`/api/profile`, { method: 'PUT', body: payload, auth: true }),
+  // Emergency Contacts
+  getEmergencyContacts: () => api(`/api/profile/emergency-contacts`, { auth: true }),
+  createEmergencyContact: (data: { name: string; email?: string; phone?: string; relationship?: string; isPrimary?: boolean }) => 
+    api(`/api/profile/emergency-contacts`, { method: 'POST', body: data, auth: true }),
+  updateEmergencyContact: (id: string, data: any) => 
+    api(`/api/profile/emergency-contacts/${id}`, { method: 'PUT', body: data, auth: true }),
+  deleteEmergencyContact: (id: string) => 
+    api(`/api/profile/emergency-contacts/${id}`, { method: 'DELETE', auth: true }),
 };
 
 export const Notifications = {

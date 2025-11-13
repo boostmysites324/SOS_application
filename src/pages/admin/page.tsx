@@ -114,6 +114,34 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+    
+    // Don't show confirmation if role hasn't changed
+    if (user.role === newRole) return;
+    
+    if (!confirm(`Change user role from ${user.role} to ${newRole}?`)) {
+      // Reset dropdown to original value
+      await loadData();
+      return;
+    }
+    
+    try {
+      await Admin.updateUser(userId, { role: newRole });
+      // Update local state immediately for better UX
+      setUsers(prevUsers => 
+        prevUsers.map(u => 
+          u.id === userId ? { ...u, role: newRole } : u
+        )
+      );
+    } catch (error: any) {
+      alert(error.message || 'Failed to update user role');
+      // Reload data on error to revert UI
+      await loadData();
+    }
+  };
+
   const handleSaveContact = async () => {
     if (!contactForm.name || !contactForm.role) {
       alert('Name and role are required');
@@ -315,9 +343,14 @@ export default function AdminDashboard() {
                       <td className="px-6 py-4 text-slate-300">{user.email || '-'}</td>
                       <td className="px-6 py-4 text-slate-300">{user.employee_id || '-'}</td>
                       <td className="px-6 py-4">
-                        <span className="px-2 py-1 rounded text-xs font-medium bg-blue-900/50 text-blue-300">
-                          {user.role}
-                        </span>
+                        <select
+                          value={user.role}
+                          onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                          className="px-3 py-1.5 bg-slate-700 border border-slate-600 rounded text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 hover:bg-slate-600 transition-colors"
+                        >
+                          <option value="employee">Employee</option>
+                          <option value="admin">Admin</option>
+                        </select>
                       </td>
                       <td className="px-6 py-4">
                         {user.email_verified ? (

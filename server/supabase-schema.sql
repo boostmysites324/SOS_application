@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Emergency contacts table (for admin to manage)
+-- Emergency contacts table (for admin to manage - company-wide)
 CREATE TABLE IF NOT EXISTS emergency_contacts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
@@ -26,6 +26,19 @@ CREATE TABLE IF NOT EXISTS emergency_contacts (
     phone VARCHAR(20),
     role VARCHAR(100) NOT NULL, -- e.g., 'manager', 'security', 'hr'
     is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- User emergency contacts table (for individual users to manage their personal contacts)
+CREATE TABLE IF NOT EXISTS user_emergency_contacts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    phone VARCHAR(20),
+    relationship VARCHAR(100), -- e.g., 'Family', 'Friend', 'Colleague'
+    is_primary BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -74,6 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_sos_alerts_status ON sos_alerts(status);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read);
 CREATE INDEX IF NOT EXISTS idx_sos_alert_recipients_alert_id ON sos_alert_recipients(sos_alert_id);
+CREATE INDEX IF NOT EXISTS idx_user_emergency_contacts_user_id ON user_emergency_contacts(user_id);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -92,5 +106,8 @@ CREATE TRIGGER update_emergency_contacts_updated_at BEFORE UPDATE ON emergency_c
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_sos_alerts_updated_at BEFORE UPDATE ON sos_alerts
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_user_emergency_contacts_updated_at BEFORE UPDATE ON user_emergency_contacts
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

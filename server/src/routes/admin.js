@@ -52,6 +52,11 @@ router.put('/users/:id', adminRequired, async (req, res) => {
     const { id } = req.params;
     const { name, email, employeeId, role, emailVerified } = req.body || {};
     
+    // Validate role if provided
+    if (role !== undefined && !['employee', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Must be "employee" or "admin"' });
+    }
+    
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (email !== undefined) updateData.email = email.toLowerCase();
