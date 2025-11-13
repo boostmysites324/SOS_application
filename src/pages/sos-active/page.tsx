@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { SOS } from '../../lib/api';
+import { SOS, Profile } from '../../lib/api';
 
 // Google Maps types
 declare global {
@@ -46,6 +46,8 @@ export default function SosActive() {
   const [loading, setLoading] = useState(true);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [emergencyContact, setEmergencyContact] = useState<{ name: string; phone: string; relationship?: string } | null>(null);
+  const [callInitiated, setCallInitiated] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -104,7 +106,30 @@ export default function SosActive() {
       }
     };
 
+    const fetchEmergencyContacts = async () => {
+      try {
+        const contacts = await Profile.getEmergencyContacts();
+        if (contacts && Array.isArray(contacts) && contacts.length > 0) {
+          // Find primary contact first, otherwise use first contact with phone
+          const primaryContact = contacts.find((c: any) => c.is_primary && c.phone);
+          const firstContactWithPhone = contacts.find((c: any) => c.phone) || contacts[0];
+          const selectedContact = primaryContact || firstContactWithPhone;
+          
+          if (selectedContact && selectedContact.phone) {
+            setEmergencyContact({
+              name: selectedContact.name,
+              phone: selectedContact.phone,
+              relationship: selectedContact.relationship || undefined
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching emergency contacts:', error);
+      }
+    };
+
     fetchAlertData();
+    fetchEmergencyContacts();
 
     // Update elapsed time every second
     const timer = setInterval(() => {
@@ -113,6 +138,58 @@ export default function SosActive() {
 
     return () => clearInterval(timer);
   }, [navigate]);
+
+  // Function to initiate emergency call
+  const initiateEmergencyCall = useCallback((phoneNumber: string, contactName?: string) => {
+    // Clean phone number (remove spaces, dashes, etc.)
+    const cleanPhone = phoneNumber.replace(/[\s\-\(\)]/g, '');
+    
+    // Use tel: protocol to initiate call
+    // On mobile devices, this will open the dialer with the number
+    // On desktop, it may show a prompt or do nothing
+    const telLink = `tel:${cleanPhone}`;
+    
+    // Try to initiate call
+    try {
+      window.location.href = telLink;
+      
+      // Show notification
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-24 left-6 right-6 bg-red-600 text-white px-6 py-4 rounded-2xl shadow-2xl z-50 animate-slide-down';
+      notification.innerHTML = `
+        <div class="flex items-center gap-3">
+          <i class="ri-phone-fill text-2xl"></i>
+          <div>
+            <p class="font-semibold">Calling Emergency Contact</p>
+            <p class="text-sm text-red-100">${contactName || 'Emergency Contact'}: ${phoneNumber}</p>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(notification);
+      
+      // Remove notification after 5 seconds
+      setTimeout(() => {
+        notification.remove();
+      }, 5000);
+    } catch (error) {
+      console.error('Error initiating call:', error);
+      // Fallback: show alert with phone number
+      alert(`Emergency Contact: ${contactName || 'Emergency Contact'}\nPhone: ${phoneNumber}\n\nPlease call this number immediately!`);
+    }
+  }, []);
+
+  // Auto-call emergency contact when SOS is active
+  useEffect(() => {
+    if (!loading && alertData && emergencyContact && emergencyContact.phone && !callInitiated) {
+      // Small delay to ensure page is loaded
+      const callTimer = setTimeout(() => {
+        initiateEmergencyCall(emergencyContact.phone, emergencyContact.name);
+        setCallInitiated(true);
+      }, 2000); // 2 second delay after page loads
+
+      return () => clearTimeout(callTimer);
+    }
+  }, [loading, alertData, emergencyContact, callInitiated, initiateEmergencyCall]);
 
   // Load Google Maps script
   useEffect(() => {
@@ -494,27 +571,46 @@ export default function SosActive() {
 
         {/* Emergency Contacts */}
         <div className="bg-green-50 rounded-2xl p-4 mb-4">
-          <h3 className="text-sm font-semibold text-gray-800 mb-3">Emergency Contacts Notified</h3>
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
-                <i className="ri-phone-fill text-sm text-white"></i>
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">Emergency Contact</h3>
+          {emergencyContact && emergencyContact.phone ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
+                  <i className="ri-phone-fill text-lg text-white"></i>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-gray-800">{emergencyContact.name}</p>
+                  {emergencyContact.relationship && (
+                    <p className="text-xs text-gray-500">{emergencyContact.relationship}</p>
+                  )}
+                  <p className="text-sm text-gray-600 mt-1">{emergencyContact.phone}</p>
+                </div>
+                {callInitiated && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-green-600 font-medium">Calling...</span>
+                  </div>
+                )}
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-800">Security Control Room</p>
-                <p className="text-xs text-gray-500">+1 (555) 911-SAFE</p>
-              </div>
+              {!callInitiated && (
+                <button
+                  onClick={() => {
+                    initiateEmergencyCall(emergencyContact.phone, emergencyContact.name);
+                    setCallInitiated(true);
+                  }}
+                  className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                  <i className="ri-phone-line"></i>
+                  Call {emergencyContact.name}
+                </button>
+              )}
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                <i className="ri-user-fill text-sm text-white"></i>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-gray-800">Emergency Coordinator</p>
-                <p className="text-xs text-gray-500">Sarah Johnson</p>
-              </div>
+          ) : (
+            <div className="text-center py-2">
+              <p className="text-xs text-gray-500">No emergency contact available</p>
+              <p className="text-xs text-gray-400 mt-1">Add a contact in your profile</p>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Cancel Button */}
