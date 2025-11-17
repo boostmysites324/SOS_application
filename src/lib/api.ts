@@ -1,6 +1,6 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+const API_BASE = 'https://sos-backend-8mlo.onrender.com';
 
 function getToken(): string | null {
   return localStorage.getItem('auth_token');
