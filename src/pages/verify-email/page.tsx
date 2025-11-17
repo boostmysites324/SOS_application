@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { api } from '../../lib/api';
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
 export default function VerifyEmail() {
   const navigate = useNavigate();
@@ -16,8 +19,15 @@ export default function VerifyEmail() {
       return;
     }
 
-    fetch(`http://localhost:4000/api/auth/verify-email/${token}`)
-      .then((res) => res.json())
+    fetch(`${API_BASE}/api/auth/verify-email/${token}`)
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then(err => {
+            throw new Error(err.error || 'Verification failed');
+          });
+        }
+        return res.json();
+      })
       .then((data) => {
         if (data.success) {
           setStatus('success');
@@ -28,9 +38,9 @@ export default function VerifyEmail() {
           setMessage(data.error || 'Verification failed');
         }
       })
-      .catch(() => {
+      .catch((err: any) => {
         setStatus('error');
-        setMessage('Network error. Please try again.');
+        setMessage(err.message || 'Network error. Please try again.');
       });
   }, [searchParams, navigate]);
 

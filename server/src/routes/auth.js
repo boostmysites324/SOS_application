@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { readJson, writeJson } = require('../utils/db');
+const supabase = require('../utils/supabase');
 const { hashPassword, verifyPassword } = require('../utils/password');
 const { sendVerificationEmail } = require('../utils/email');
 
@@ -18,149 +18,248 @@ function generateVerificationToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Register new user
 router.post('/register', async (req, res) => {
-  const { email, password, name, employeeId } = req.body || {};
-  if ((!email && !employeeId) || !password) {
-    return res.status(400).json({ error: 'email or employeeId and password are required' });
-  }
-  const db = await readJson('users.json', []);
-  const existsByEmail = email ? db.find((u) => u.email?.toLowerCase() === String(email).toLowerCase()) : null;
-  if (existsByEmail) {
-    return res.status(409).json({ error: 'Email already registered' });
-  }
-  const existsByEmp = employeeId ? db.find((u) => u.employeeId === String(employeeId)) : null;
-  if (existsByEmp) {
-    return res.status(409).json({ error: 'Employee ID already registered' });
-  }
-  const hashed = await hashPassword(password);
-  const verificationToken = generateVerificationToken();
-  const newUser = {
-    id: `u_${Date.now()}`,
-    email: email || null,
-    employeeId: employeeId || null,
-    name: name || '',
-    password: hashed,
-    emailVerified: false,
-    verificationToken,
-    verificationTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
-    createdAt: new Date().toISOString(),
-  };
-  db.push(newUser);
-  await writeJson('users.json', db);
-  
-  // Send verification email (in dev mode, just log it)
-  if (email) {
-    await sendVerificationEmail(email, verificationToken, name);
-  }
-  
-  return res.status(201).json({ 
-    message: 'Registration successful. Please check your email to verify your account.',
-    requiresVerification: !!email,
-    user: { id: newUser.id, email: newUser.email, employeeId: newUser.employeeId, name: newUser.name }
-  });
-});
-
-router.post('/login', async (req, res) => {
-  const { email, employeeId, password } = req.body || {};
-  if ((!email && !employeeId) || !password) {
-    return res.status(400).json({ error: 'email or employeeId and password are required' });
-  }
-  const db = await readJson('users.json', []);
-  let user = null;
-  if (email) {
-    user = db.find((u) => u.email?.toLowerCase() === String(email).toLowerCase());
-  } else if (employeeId) {
-    user = db.find((u) => u.employeeId === String(employeeId));
-  }
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-  const ok = await verifyPassword(password, user.password);
-  if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
-  
-  // Check email verification
-  if (user.email && !user.emailVerified) {
-    return res.status(403).json({ 
-      error: 'Email not verified',
-      message: 'Please verify your email before logging in. Check your email for the verification link.',
-      requiresVerification: true
+  try {
+    const { email, password, name, employeeId } = req.body || {};
+    
+    if ((!email && !employeeId) || !password) {
+      return res.status(400).json({ error: 'email or employeeId and password are required' });
+    }
+    
+    // Check if user exists by email
+    if (email) {
+      const { data: existingByEmail } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email.toLowerCase())
+        .single();
+      
+      if (existingByEmail) {
+        return res.status(409).json({ error: 'Email already registered' });
+      }
+    }
+    
+    // Check if user exists by employee ID
+    if (employeeId) {
+      const { data: existingByEmp } = await supabase
+        .from('users')
+        .select('id')
+        .eq('employee_id', employeeId)
+        .single();
+      
+      if (existingByEmp) {
+        return res.status(409).json({ error: 'Employee ID already registered' });
+      }
+    }
+    
+    const hashed = await hashPassword(password);
+    const verificationToken = generateVerificationToken();
+    const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    
+    const { data: newUser, error } = await supabase
+      .from('users')
+      .insert({
+        email: email ? email.toLowerCase() : null,
+        employee_id: employeeId || null,
+        name: name || '',
+        password_hash: hashed,
+        email_verified: false,
+        verification_token: verificationToken,
+        verification_token_expiry: verificationTokenExpiry,
+        role: 'employee'
+      })
+      .select('id, email, employee_id, name, role, created_at')
+      .single();
+    
+    if (error) {
+      console.error('Registration error:', error);
+      return res.status(500).json({ error: 'Failed to register user' });
+    }
+    
+    // Send verification email
+    if (email) {
+      await sendVerificationEmail(email, verificationToken, name);
+    }
+    
+    return res.status(201).json({ 
+      message: 'Registration successful. Please check your email to verify your account.',
+      requiresVerification: !!email,
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        employeeId: newUser.employee_id,
+        name: newUser.name,
+        role: newUser.role
+      }
     });
+  } catch (error) {
+    console.error('Registration error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-  
-  const token = issueToken(user.id);
-  return res.json({ token, user: { id: user.id, email: user.email, employeeId: user.employeeId, name: user.name } });
 });
 
-// Verify email endpoint
+// Login
+router.post('/login', async (req, res) => {
+  try {
+    const { email, employeeId, password } = req.body || {};
+    
+    if ((!email && !employeeId) || !password) {
+      return res.status(400).json({ error: 'email or employeeId and password are required' });
+    }
+    
+    let user = null;
+    
+    // Find user by email or employee ID
+    if (email) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .single();
+      
+      if (!error && data) user = data;
+    } else if (employeeId) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('employee_id', employeeId)
+        .single();
+      
+      if (!error && data) user = data;
+    }
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    const ok = await verifyPassword(password, user.password_hash);
+    if (!ok) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Check email verification
+    if (user.email && !user.email_verified) {
+      return res.status(403).json({ 
+        error: 'Email not verified',
+        message: 'Please verify your email before logging in. Check your email for the verification link.',
+        requiresVerification: true
+      });
+    }
+    
+    const token = issueToken(user.id);
+    return res.json({ 
+      token, 
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        employeeId: user.employee_id, 
+        name: user.name,
+        role: user.role
+      } 
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Verify email
 router.get('/verify-email/:token', async (req, res) => {
-  const { token } = req.params;
-  const db = await readJson('users.json', []);
-  const userIndex = db.findIndex((u) => u.verificationToken === token);
-  
-  if (userIndex === -1) {
-    return res.status(400).json({ error: 'Invalid or expired verification token' });
+  try {
+    const { token } = req.params;
+    
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('verification_token', token)
+      .single();
+    
+    if (fetchError || !user) {
+      return res.status(400).json({ error: 'Invalid or expired verification token' });
+    }
+    
+    // Check if token is expired
+    if (new Date(user.verification_token_expiry) < new Date()) {
+      return res.status(400).json({ error: 'Verification token has expired' });
+    }
+    
+    // Mark as verified
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        email_verified: true,
+        verification_token: null,
+        verification_token_expiry: null
+      })
+      .eq('id', user.id);
+    
+    if (updateError) {
+      console.error('Verification update error:', updateError);
+      return res.status(500).json({ error: 'Failed to verify email' });
+    }
+    
+    return res.json({ 
+      message: 'Email verified successfully! You can now log in.',
+      success: true
+    });
+  } catch (error) {
+    console.error('Verification error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-  
-  const user = db[userIndex];
-  
-  // Check if token is expired
-  if (new Date(user.verificationTokenExpiry) < new Date()) {
-    return res.status(400).json({ error: 'Verification token has expired' });
-  }
-  
-  // Mark as verified
-  db[userIndex] = {
-    ...user,
-    emailVerified: true,
-    verificationToken: null,
-    verificationTokenExpiry: null,
-    verifiedAt: new Date().toISOString(),
-  };
-  
-  await writeJson('users.json', db);
-  
-  return res.json({ 
-    message: 'Email verified successfully! You can now log in.',
-    success: true
-  });
 });
 
 // Resend verification email
 router.post('/resend-verification', async (req, res) => {
-  const { email } = req.body || {};
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
+  try {
+    const { email } = req.body || {};
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .single();
+    
+    if (fetchError || !user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    if (user.email_verified) {
+      return res.status(400).json({ error: 'Email already verified' });
+    }
+    
+    // Generate new token
+    const verificationToken = generateVerificationToken();
+    const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        verification_token: verificationToken,
+        verification_token_expiry: verificationTokenExpiry
+      })
+      .eq('id', user.id);
+    
+    if (updateError) {
+      console.error('Resend verification error:', updateError);
+      return res.status(500).json({ error: 'Failed to resend verification email' });
+    }
+    
+    await sendVerificationEmail(email, verificationToken, user.name);
+    
+    return res.json({ 
+      message: 'Verification email sent. Please check your email.',
+      success: true
+    });
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-  
-  const db = await readJson('users.json', []);
-  const userIndex = db.findIndex((u) => u.email?.toLowerCase() === String(email).toLowerCase());
-  
-  if (userIndex === -1) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-  
-  const user = db[userIndex];
-  
-  if (user.emailVerified) {
-    return res.status(400).json({ error: 'Email already verified' });
-  }
-  
-  // Generate new token
-  const verificationToken = generateVerificationToken();
-  db[userIndex] = {
-    ...user,
-    verificationToken,
-    verificationTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-  };
-  
-  await writeJson('users.json', db);
-  await sendVerificationEmail(email, verificationToken, user.name);
-  
-  return res.json({ 
-    message: 'Verification email sent. Please check your email.',
-    success: true
-  });
 });
 
 module.exports = router;
-
-
 

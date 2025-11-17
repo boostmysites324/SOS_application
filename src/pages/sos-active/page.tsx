@@ -1,21 +1,135 @@
-
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { SOS } from '../../lib/api';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { SOS, Profile } from '../../lib/api';
+
+// Google Maps types
+declare global {
+  interface Window {
+    google?: {
+      maps: {
+        Map: new (element: HTMLElement, options?: any) => any;
+        Marker: new (options?: any) => any;
+        InfoWindow: new (options?: any) => any;
+        SymbolPath: {
+          CIRCLE: any;
+        };
+        Animation: {
+          DROP: any;
+        };
+      };
+    };
+    gm_authFailure?: () => void;
+  }
+}
+
+interface AlertData {
+  latitude?: string | number;
+  longitude?: string | number;
+  lat?: string | number;
+  lng?: string | number;
+  location?: {
+    latitude?: string | number;
+    longitude?: string | number;
+  };
+  address?: string;
+  startedAt?: string;
+  started_at?: string;
+  timestamp?: string;
+}
 
 export default function SosActive() {
   const navigate = useNavigate();
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [alertTime, setAlertTime] = useState<Date>(new Date());
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [alertData, setAlertData] = useState<AlertData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [emergencyContact, setEmergencyContact] = useState<{ name: string; phone: string; relationship?: string } | null>(null);
+  const [callInitiated, setCallInitiated] = useState(false);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
 
+  // Format elapsed time
+  const formatElapsedTime = useCallback((seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }, []);
+
+  // Estimated arrival time
+  const estimatedArrival = useCallback(() => {
+    const baseTime = 180; // 3 minutes in seconds
+    const remaining = Math.max(0, baseTime - elapsedTime);
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    return remaining > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : 'Arriving now';
+  }, [elapsedTime]);
+
+  // Fetch alert data
   useEffect(() => {
-    // Get alert data from localStorage
-    const alertData = localStorage.getItem('currentAlert');
-    if (alertData) {
-      const parsed = JSON.parse(alertData);
-      setAlertTime(new Date(parsed.timestamp));
-    }
+    const fetchAlertData = async () => {
+      try {
+        const activeAlert = await SOS.active();
+        if (activeAlert) {
+          setAlertData(activeAlert);
+          setAlertTime(new Date(activeAlert.startedAt || activeAlert.started_at || Date.now()));
+          localStorage.setItem('currentAlert', JSON.stringify(activeAlert));
+        } else {
+          // Check localStorage as fallback
+          const stored = localStorage.getItem('currentAlert');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            setAlertData(parsed);
+            setAlertTime(new Date(parsed.startedAt || parsed.started_at || parsed.timestamp || Date.now()));
+          } else {
+            navigate('/home-screen');
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching alert:', error);
+        // Check localStorage as fallback
+        const stored = localStorage.getItem('currentAlert');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setAlertData(parsed);
+          setAlertTime(new Date(parsed.startedAt || parsed.started_at || parsed.timestamp || Date.now()));
+        } else {
+          navigate('/home-screen');
+          return;
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const fetchEmergencyContacts = async () => {
+      try {
+        const contacts = await Profile.getEmergencyContacts();
+        if (contacts && Array.isArray(contacts) && contacts.length > 0) {
+          // Find primary contact first, otherwise use first contact with phone
+          const primaryContact = contacts.find((c: any) => c.is_primary && c.phone);
+          const firstContactWithPhone = contacts.find((c: any) => c.phone) || contacts[0];
+          const selectedContact = primaryContact || firstContactWithPhone;
+          
+          if (selectedContact && selectedContact.phone) {
+            setEmergencyContact({
+              name: selectedContact.name,
+              phone: selectedContact.phone,
+              relationship: selectedContact.relationship || undefined
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching emergency contacts:', error);
+      }
+    };
+
+    fetchAlertData();
+    fetchEmergencyContacts();
 
     // Update elapsed time every second
     const timer = setInterval(() => {
@@ -23,30 +137,282 @@ export default function SosActive() {
     }, 1000);
 
     return () => clearInterval(timer);
+  }, [navigate]);
+
+  // Function to initiate emergency call
+  const initiateEmergencyCall = useCallback((phoneNumber: string, contactName?: string) => {
+    // Clean phone number (remove spaces, dashes, etc.)
+    const cleanPhone = phoneNumber.replace(/[\s\-\(\)]/g, '');
+    
+    // Use tel: protocol to initiate call
+    // On mobile devices, this will open the dialer with the number
+    // On desktop, it may show a prompt or do nothing
+    const telLink = `tel:${cleanPhone}`;
+    
+    // Try to initiate call
+    try {
+      window.location.href = telLink;
+      
+      // Show notification
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-24 left-6 right-6 bg-red-600 text-white px-6 py-4 rounded-2xl shadow-2xl z-50 animate-slide-down';
+      notification.innerHTML = `
+        <div class="flex items-center gap-3">
+          <i class="ri-phone-fill text-2xl"></i>
+          <div>
+            <p class="font-semibold">Calling Emergency Contact</p>
+            <p class="text-sm text-red-100">${contactName || 'Emergency Contact'}: ${phoneNumber}</p>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(notification);
+      
+      // Remove notification after 5 seconds
+      setTimeout(() => {
+        notification.remove();
+      }, 5000);
+    } catch (error) {
+      console.error('Error initiating call:', error);
+      // Fallback: show alert with phone number
+      alert(`Emergency Contact: ${contactName || 'Emergency Contact'}\nPhone: ${phoneNumber}\n\nPlease call this number immediately!`);
+    }
+  }, []);
+
+  // Auto-call emergency contact when SOS is active
+  useEffect(() => {
+    if (!loading && alertData && emergencyContact && emergencyContact.phone && !callInitiated) {
+      // Small delay to ensure page is loaded
+      const callTimer = setTimeout(() => {
+        initiateEmergencyCall(emergencyContact.phone, emergencyContact.name);
+        setCallInitiated(true);
+      }, 2000); // 2 second delay after page loads
+
+      return () => clearTimeout(callTimer);
+    }
+  }, [loading, alertData, emergencyContact, callInitiated, initiateEmergencyCall]);
+
+  // Load Google Maps script
+  useEffect(() => {
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    
+    // Validate API key
+    if (!apiKey || apiKey === 'YOUR_GOOGLE_MAPS_API_KEY') {
+      setMapError('Google Maps API key not configured. Please set VITE_GOOGLE_MAPS_API_KEY in your .env file.');
+      return;
+    }
+
+    // Check if Google Maps is already loaded
+    if (window.google?.maps) {
+      setMapLoaded(true);
+      return;
+    }
+
+    // Global error handler for authentication failures
+    window.gm_authFailure = () => {
+      setMapError('Google Maps authentication failed. Please check your API key and ensure all required APIs are enabled.');
+      setMapLoaded(false);
+    };
+
+    // Check for existing script
+    const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+    if (existingScript) {
+      const checkLoaded = setInterval(() => {
+        if (window.google?.maps) {
+          clearInterval(checkLoaded);
+          setMapLoaded(true);
+        }
+      }, 100);
+      
+      setTimeout(() => {
+        clearInterval(checkLoaded);
+        if (!window.google?.maps) {
+          setMapError('Google Maps failed to load. Please check your API key configuration.');
+        }
+      }, 5000);
+      
+      return;
+    }
+
+    // Load Google Maps script
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.async = true;
+    script.defer = true;
+    
+    script.onerror = () => {
+      setMapError('Failed to load Google Maps. Please check your API key and internet connection.');
+      setMapLoaded(false);
+    };
+
+    script.onload = () => {
+      // Additional check to ensure maps library is loaded
+      const checkMaps = setInterval(() => {
+        if (window.google?.maps) {
+          clearInterval(checkMaps);
+          setMapLoaded(true);
+          setMapError(null);
+        }
+      }, 100);
+
+      setTimeout(() => {
+        clearInterval(checkMaps);
+        if (!window.google?.maps) {
+          setMapError('Google Maps loaded but maps library not available. Please check your API key configuration.');
+        }
+      }, 5000);
+    };
+
+    document.head.appendChild(script);
+
+    return () => {
+      delete window.gm_authFailure;
+    };
+  }, []);
+
+  // Initialize map
+  const initializeMap = useCallback(() => {
+    if (!mapRef.current || !alertData || !window.google?.maps) {
+      return;
+    }
+
+    try {
+      // Get coordinates from location object (backend format) or direct properties (fallback)
+      const latValue = alertData.location?.latitude || alertData.latitude || alertData.lat;
+      const lngValue = alertData.location?.longitude || alertData.longitude || alertData.lng;
+      
+      // Validate coordinates exist before using defaults
+      if (!latValue || !lngValue) {
+        console.warn('No valid coordinates found in alert data:', alertData);
+        setMapError('Location coordinates not available. Please ensure GPS is enabled.');
+        return;
+      }
+      
+      const lat = parseFloat(String(latValue));
+      const lng = parseFloat(String(lngValue));
+      
+      // Validate coordinate ranges (latitude: -90 to 90, longitude: -180 to 180)
+      if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        console.error('Invalid coordinates:', { lat, lng });
+        setMapError('Invalid location coordinates. Please try again.');
+        return;
+      }
+
+      // Create map instance
+      const map = new window.google.maps.Map(mapRef.current, {
+        center: { lat, lng },
+        zoom: 15,
+        mapTypeControl: true,
+        streetViewControl: false,
+        fullscreenControl: true,
+        zoomControl: true,
+        styles: [
+          {
+            featureType: 'poi',
+            elementType: 'labels',
+            stylers: [{ visibility: 'off' }]
+          }
+        ]
+      });
+
+      mapInstanceRef.current = map;
+
+      // Create marker
+      const marker = new window.google.maps.Marker({
+        position: { lat, lng },
+        map: map,
+        title: 'Emergency Location',
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: '#DC2626',
+          fillOpacity: 1,
+          strokeColor: '#FFFFFF',
+          strokeWeight: 3,
+        },
+        animation: window.google.maps.Animation.DROP
+      });
+
+      markerRef.current = marker;
+
+      // Create info window
+      const infoWindow = new window.google.maps.InfoWindow({
+        content: `
+          <div style="padding: 8px;">
+            <h3 style="margin: 0 0 4px 0; font-size: 14px; font-weight: bold;">Emergency Location</h3>
+            <p style="margin: 0; font-size: 12px; color: #666;">${alertData.address || 'Location shared'}</p>
+            <p style="margin: 4px 0 0 0; font-size: 11px; color: #999;">${lat.toFixed(6)}, ${lng.toFixed(6)}</p>
+          </div>
+        `
+      });
+
+      marker.addListener('click', () => {
+        infoWindow.open(map, marker);
+      });
+
+      // Open info window by default
+      infoWindow.open(map, marker);
+      setMapError(null);
+
+    } catch (error: any) {
+      console.error('Error initializing map:', error);
+      const errorMessage = error?.message || 'Unknown error initializing map';
+      
+      if (errorMessage.includes('ApiNotActivated') || errorMessage.includes('ApiNotActivatedMapError')) {
+        setMapError(
+          'Maps JavaScript API is not enabled. ' +
+          'Please enable it in Google Cloud Console under APIs & Services > Library.'
+        );
+      } else {
+        setMapError(`Failed to initialize map: ${errorMessage}`);
+      }
+    }
+  }, [alertData]);
+
+  // Initialize map when dependencies are ready
+  useEffect(() => {
+    if (mapLoaded && alertData && !loading && !mapError) {
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        initializeMap();
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [mapLoaded, alertData, loading, mapError, initializeMap]);
+
+  // Cleanup map on unmount
+  useEffect(() => {
+    return () => {
+      if (markerRef.current) {
+        markerRef.current.setMap(null);
+      }
+      if (mapInstanceRef.current) {
+        // Google Maps doesn't require explicit cleanup for the map instance
+      }
+    };
   }, []);
 
   const handleCancelAlert = async () => {
     try {
       await SOS.cancel();
-    } catch {}
-    localStorage.removeItem('currentAlert');
-    setShowCancelConfirm(false);
-    navigate('/home-screen');
+      localStorage.removeItem('currentAlert');
+      setShowCancelConfirm(false);
+      navigate('/home-screen');
+    } catch (err: any) {
+      alert(err.message || 'Failed to cancel alert');
+    }
   };
 
-  const formatElapsedTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const estimatedArrival = () => {
-    const baseTime = 180; // 3 minutes in seconds
-    const remaining = Math.max(0, baseTime - elapsedTime);
-    const mins = Math.floor(remaining / 60);
-    const secs = remaining % 60;
-    return remaining > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : 'Arriving now';
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading alert...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -65,48 +431,110 @@ export default function SosActive() {
 
       {/* Map Container */}
       <div className="relative h-96 bg-gray-100">
-        <img
-          src="https://readdy.ai/api/search-image?query=Modern%20digital%20map%20interface%20showing%20urban%20area%20with%20GPS%20location%20marker%2C%20clean%20minimalist%20design%2C%20blue%20and%20white%20color%20scheme%2C%20top-down%20satellite%20view%20with%20street%20grid%2C%20professional%20navigation%20app%20style%2C%20high%20detail%2C%20centered%20composition%2C%20realistic%20rendering&width=375&height=384&seq=map001&orientation=portrait"
-          alt="Location Map"
-          className="w-full h-full object-cover"
+        {/* Google Map */}
+        <div 
+          ref={mapRef} 
+          className="w-full h-full"
+          style={{ minHeight: '384px' }}
         />
         
-        {/* Location Overlay */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="bg-white/95 backdrop-blur-sm rounded-2xl px-6 py-4 shadow-xl max-w-xs mx-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center animate-pulse">
-                <i className="ri-map-pin-fill text-xl text-white"></i>
+        {/* Map Error/Status Overlay */}
+        {(mapError || !mapLoaded) && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
+            <div className="text-center p-6 max-w-sm mx-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i className="ri-error-warning-line text-3xl text-red-600"></i>
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-gray-800">Sharing your location</p>
-                <p className="text-xs text-gray-500">with the security team...</p>
-              </div>
-            </div>
-            <div className="bg-gray-100 rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <i className="ri-time-line text-sm text-gray-600"></i>
-                <p className="text-xs text-gray-600">Alert sent at {alertTime.toLocaleTimeString()}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <i className="ri-map-pin-2-line text-sm text-gray-600"></i>
-                <p className="text-xs text-gray-600">Main Building, Floor 3</p>
-              </div>
-            </div>
-          </div>
-        </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                {mapError ? 'Map Unavailable' : 'Loading Map...'}
+              </h3>
+              
+              {mapError ? (
+                <div className="text-sm text-gray-600 mb-4">
+                  <p className="mb-2">{mapError}</p>
+                  {(mapError.includes('ApiNotActivated') || mapError.includes('not enabled')) && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-3 text-left">
+                      <p className="text-xs font-semibold text-yellow-800 mb-1">How to fix:</p>
+                      <ol className="text-xs text-yellow-700 list-decimal list-inside space-y-1">
+                        <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">Google Cloud Console</a></li>
+                        <li>Navigate to <strong>APIs & Services</strong> → <strong>Library</strong></li>
+                        <li>Search for <strong>"Maps JavaScript API"</strong></li>
+                        <li>Click <strong>"Enable"</strong></li>
+                        <li>Wait a few minutes and refresh this page</li>
+                      </ol>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-sm text-gray-600">Initializing map...</p>
+                </div>
+              )}
 
-        {/* Pulsing Location Marker */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-          <div className="relative">
-            <div className="w-16 h-16 bg-red-500/30 rounded-full animate-ping absolute"></div>
-            <div className="w-16 h-16 bg-red-500/50 rounded-full flex items-center justify-center">
-              <div className="w-8 h-8 bg-red-600 rounded-full border-4 border-white shadow-lg"></div>
+              {/* Location fallback */}
+              {alertData && (() => {
+                const latValue = alertData.location?.latitude || alertData.latitude || alertData.lat;
+                const lngValue = alertData.location?.longitude || alertData.longitude || alertData.lng;
+                if (!latValue || !lngValue) return null;
+                
+                return (
+                  <div className="bg-white rounded-lg p-4 space-y-2 mt-4">
+                    <div className="flex items-center gap-2 justify-center">
+                      <i className="ri-map-pin-2-line text-gray-600"></i>
+                      <p className="text-sm font-medium text-gray-800">Location Coordinates</p>
+                    </div>
+                    <p className="text-xs text-gray-600 font-mono">
+                      {parseFloat(String(latValue)).toFixed(6)}, {parseFloat(String(lngValue)).toFixed(6)}
+                    </p>
+                    {alertData.address && (
+                      <p className="text-xs text-gray-500 mt-2">{alertData.address}</p>
+                    )}
+                    <a
+                      href={`https://www.google.com/maps?q=${latValue},${lngValue}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                    >
+                      <i className="ri-external-link-line"></i>
+                      Open in Google Maps
+                    </a>
+                  </div>
+                );
+              })()}
             </div>
           </div>
-        </div>
+        )}
+        
+        {/* Location Overlay */}
+        {mapLoaded && !mapError && (
+          <div className="absolute top-4 left-4 right-4 z-10 pointer-events-none">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl px-4 py-3 shadow-xl max-w-xs pointer-events-auto">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center animate-pulse">
+                  <i className="ri-map-pin-fill text-lg text-white"></i>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gray-800 truncate">Sharing your location</p>
+                  <p className="text-xs text-gray-500">with the security team...</p>
+                </div>
+              </div>
+              <div className="bg-gray-100 rounded-lg p-2 space-y-1">
+                <div className="flex items-center gap-2">
+                  <i className="ri-time-line text-xs text-gray-600"></i>
+                  <p className="text-xs text-gray-600">{alertTime.toLocaleTimeString()}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <i className="ri-map-pin-2-line text-xs text-gray-600"></i>
+                  <p className="text-xs text-gray-600 truncate">{alertData?.address || 'Location being determined...'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* Rest of your component remains the same */}
       {/* Status Information */}
       <div className="px-6 py-6">
         <div className="bg-blue-50 rounded-2xl p-5 mb-4">
@@ -143,27 +571,46 @@ export default function SosActive() {
 
         {/* Emergency Contacts */}
         <div className="bg-green-50 rounded-2xl p-4 mb-4">
-          <h3 className="text-sm font-semibold text-gray-800 mb-3">Emergency Contacts Notified</h3>
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
-                <i className="ri-phone-fill text-sm text-white"></i>
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">Emergency Contact</h3>
+          {emergencyContact && emergencyContact.phone ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
+                  <i className="ri-phone-fill text-lg text-white"></i>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-gray-800">{emergencyContact.name}</p>
+                  {emergencyContact.relationship && (
+                    <p className="text-xs text-gray-500">{emergencyContact.relationship}</p>
+                  )}
+                  <p className="text-sm text-gray-600 mt-1">{emergencyContact.phone}</p>
+                </div>
+                {callInitiated && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-green-600 font-medium">Calling...</span>
+                  </div>
+                )}
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-800">Security Control Room</p>
-                <p className="text-xs text-gray-500">+1 (555) 911-SAFE</p>
-              </div>
+              {!callInitiated && (
+                <button
+                  onClick={() => {
+                    initiateEmergencyCall(emergencyContact.phone, emergencyContact.name);
+                    setCallInitiated(true);
+                  }}
+                  className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                  <i className="ri-phone-line"></i>
+                  Call {emergencyContact.name}
+                </button>
+              )}
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                <i className="ri-user-fill text-sm text-white"></i>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-gray-800">Emergency Coordinator</p>
-                <p className="text-xs text-gray-500">Sarah Johnson</p>
-              </div>
+          ) : (
+            <div className="text-center py-2">
+              <p className="text-xs text-gray-500">No emergency contact available</p>
+              <p className="text-xs text-gray-400 mt-1">Add a contact in your profile</p>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Cancel Button */}
