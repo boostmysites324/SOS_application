@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SOS } from '../../lib/api';
 import BottomNav from '../../components/feature/BottomNav';
@@ -10,6 +10,7 @@ export default function HomeScreen() {
   const [pressTimer, setPressTimer] = useState<NodeJS.Timeout | null>(null);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const locationRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   // Update time every second
   useEffect(() => {
@@ -37,45 +38,37 @@ export default function HomeScreen() {
     setIsPressed(true);
     let currentProgress = 0;
     
+    // Start getting location immediately when press starts
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          locationRef.current = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          };
+        },
+        (error) => {
+          console.warn('Location error:', error.message);
+          locationRef.current = null;
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+    
     const timer = setInterval(() => {
       currentProgress += 3.33;
       setProgress(currentProgress);
       
       if (currentProgress >= 100) {
         clearInterval(timer);
-        // Get current location
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              SOS.start({
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude
-              })
-                .then((alertData) => {
-                  localStorage.setItem('currentAlert', JSON.stringify(alertData));
-                  navigate('/sos-active');
-                })
-                .catch((e: any) => alert(e.message || 'Failed to start SOS'));
-            },
-            () => {
-              // If location fails, start SOS without location
-              SOS.start()
-                .then((alertData) => {
-                  localStorage.setItem('currentAlert', JSON.stringify(alertData));
-                  navigate('/sos-active');
-                })
-                .catch((e: any) => alert(e.message || 'Failed to start SOS'));
-            }
-          );
-        } else {
-          // Geolocation not supported
-          SOS.start()
-            .then((alertData) => {
-              localStorage.setItem('currentAlert', JSON.stringify(alertData));
-              navigate('/sos-active');
-            })
-            .catch((e: any) => alert(e.message || 'Failed to start SOS'));
-        }
+        // Use location if available, otherwise send without
+        const coords = locationRef.current || undefined;
+        SOS.start(coords)
+          .then((alertData) => {
+            localStorage.setItem('currentAlert', JSON.stringify(alertData));
+            navigate('/sos-active');
+          })
+          .catch((e: any) => alert(e.message || 'Failed to start SOS'));
       }
     }, 100);
     

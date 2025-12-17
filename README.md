@@ -137,6 +137,24 @@ Frontend runs on: **http://localhost:5173** (or your configured port)
 
 ---
 
+## 📱 Mobile (Capacitor + Android)
+
+1. **Install mobile deps** (done once):
+   ```bash
+   npm install
+   npm run build
+   npm run cap:sync
+   ```
+2. **Open Android Studio** with the generated project:
+   ```bash
+   npm run android
+   ```
+3. **Build / run** from Android Studio (`Run > Run 'app'`) or use Gradle tasks.
+
+> Remember to re-run `npm run build && npm run cap:sync` whenever you change web code before rebuilding the Android app.
+
+---
+
 ## 🔑 API Endpoints
 
 ### **Authentication**

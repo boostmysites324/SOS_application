@@ -23,6 +23,8 @@ declare global {
 }
 
 interface AlertData {
+  id?: string;
+  status?: string;
   latitude?: string | number;
   longitude?: string | number;
   lat?: string | number;
@@ -30,7 +32,7 @@ interface AlertData {
   location?: {
     latitude?: string | number;
     longitude?: string | number;
-  };
+  } | null;
   address?: string;
   startedAt?: string;
   started_at?: string;
@@ -136,7 +138,25 @@ export default function SosActive() {
       setElapsedTime(prev => prev + 1);
     }, 1000);
 
-    return () => clearInterval(timer);
+    // Poll for alert status to detect when admin resolves it
+    const pollInterval = setInterval(async () => {
+      try {
+        const activeAlert = await SOS.active();
+        if (!activeAlert || activeAlert.status === 'resolved' || activeAlert.status === 'cancelled') {
+          localStorage.removeItem('currentAlert');
+          navigate('/home-screen');
+        }
+      } catch (error) {
+        // If 404 or no active alert, redirect to home
+        localStorage.removeItem('currentAlert');
+        navigate('/home-screen');
+      }
+    }, 5000); // Check every 5 seconds
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(pollInterval);
+    };
   }, [navigate]);
 
   // Function to initiate emergency call
@@ -233,9 +253,9 @@ export default function SosActive() {
       return;
     }
 
-    // Load Google Maps script
+    // Load Google Maps script with async loading
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
     script.async = true;
     script.defer = true;
     
@@ -283,7 +303,7 @@ export default function SosActive() {
       // Validate coordinates exist before using defaults
       if (!latValue || !lngValue) {
         console.warn('No valid coordinates found in alert data:', alertData);
-        setMapError('Location coordinates not available. Please ensure GPS is enabled.');
+        setMapError('Location coordinates not available. The SOS alert was sent without GPS location. Emergency contacts have still been notified.');
         return;
       }
       

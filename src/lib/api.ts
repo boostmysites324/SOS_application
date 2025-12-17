@@ -1,6 +1,9 @@
+import { CapacitorHttp, Capacitor } from '@capacitor/core';
+import type { HttpResponse } from '@capacitor/core';
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
-const API_BASE = 'https://sos-backend-8mlo.onrender.com';
+const API_BASE = 'https://sos-backend-l46b.onrender.com';
 
 function getToken(): string | null {
   return localStorage.getItem('auth_token');
@@ -13,16 +16,43 @@ export async function api<T = any>(path: string, options: { method?: HttpMethod;
     const token = getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
   }
-  const res = await fetch(url, {
-    method: options.method || 'GET',
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Request failed: ${res.status}`);
+
+  // Use CapacitorHttp for native platforms (Android/iOS)
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const response: HttpResponse = await CapacitorHttp.request({
+        method: options.method || 'GET',
+        url: url,
+        headers: headers,
+        data: options.body,
+      });
+
+      if (response.status >= 400) {
+        const err = response.data || {};
+        throw new Error(err.error || `Request failed: ${response.status}`);
+      }
+      
+      return response.data as T;
+    } catch (error: any) {
+      // Handle network errors
+      if (error.message) {
+        throw error;
+      }
+      throw new Error('Network request failed. Please check your internet connection.');
+    }
+  } else {
+    // Use standard fetch for web
+    const res = await fetch(url, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Request failed: ${res.status}`);
+    }
+    return res.json();
   }
-  return res.json();
 }
 
 export const Auth = {

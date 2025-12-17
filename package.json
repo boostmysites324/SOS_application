@@ -8,9 +8,12 @@
     "server": "npm --prefix server run start",
     "server:dev": "npm --prefix server run dev",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync",
+    "android": "npm run build && npx cap sync android && npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.4",
     "@capacitor/core": "^7.4.4",
     "@stripe/react-stripe-js": "4.0.2",
     "@supabase/supabase-js": "2.57.4",
