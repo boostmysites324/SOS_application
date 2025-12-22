@@ -10,13 +10,16 @@ declare global {
         Map: new (element: HTMLElement, options?: any) => any;
         Marker: new (options?: any) => any;
         InfoWindow: new (options?: any) => any;
+        LatLngBounds: new () => {
+          extend: (latLng: { lat: number; lng: number }) => void;
+        };
         SymbolPath: {
           CIRCLE: any;
         };
         Animation: {
           DROP: any;
         };
-      };
+      } | undefined;
     };
     gm_authFailure?: () => void;
   }
@@ -50,9 +53,95 @@ export default function SosActive() {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [emergencyContact, setEmergencyContact] = useState<{ name: string; phone: string; relationship?: string } | null>(null);
   const [callInitiated, setCallInitiated] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationPermission, setLocationPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
+  const [locationError, setLocationError] = useState<string | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
+  const userMarkerRef = useRef<any>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const mapInitializedRef = useRef<boolean>(false);
+  const lastLocationUpdateRef = useRef<number>(0);
+
+  // Request location permission and get current location
+  const requestLocationPermission = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser.');
+      setLocationPermission('denied');
+      return;
+    }
+
+    // Request location with high accuracy
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation({ lat: latitude, lng: longitude });
+        setLocationPermission('granted');
+        setLocationError(null);
+        
+        // Start watching position for real-time updates
+        if (watchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        }
+        
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (pos) => {
+            const now = Date.now();
+            // Throttle location updates to once per 2 seconds to prevent excessive re-renders
+            if (now - lastLocationUpdateRef.current > 2000) {
+              lastLocationUpdateRef.current = now;
+              setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            }
+          },
+          (err) => {
+            console.warn('Location watch error:', err);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 2000 // Allow cached location up to 2 seconds old
+          }
+        );
+      },
+      (error) => {
+        console.error('Location error:', error);
+        setLocationPermission('denied');
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setLocationError('Location permission denied. Please enable location access in your browser settings.');
+            break;
+          case error.POSITION_UNAVAILABLE:
+            setLocationError('Location information unavailable.');
+            break;
+          case error.TIMEOUT:
+            setLocationError('Location request timed out.');
+            break;
+          default:
+            setLocationError('An unknown error occurred while getting location.');
+            break;
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
+  }, []);
+
+  // Request location permission on component mount
+  useEffect(() => {
+    requestLocationPermission();
+    
+    return () => {
+      // Cleanup location watch on unmount
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [requestLocationPermission]);
 
   // Format elapsed time
   const formatElapsedTime = useCallback((seconds: number) => {
@@ -170,7 +259,7 @@ export default function SosActive() {
     const telLink = `tel:${cleanPhone}`;
     
     // Try to initiate call
-    try {
+    try { 
       window.location.href = telLink;
       
       // Show notification
@@ -213,16 +302,16 @@ export default function SosActive() {
 
   // Load Google Maps script
   useEffect(() => {
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    const apiKey = "AIzaSyAs08ygQEdhqgbhFJ--9FLS9pIkRYKf_QA";
     
-    // Validate API key
-    if (!apiKey || apiKey === 'YOUR_GOOGLE_MAPS_API_KEY') {
-      setMapError('Google Maps API key not configured. Please set VITE_GOOGLE_MAPS_API_KEY in your .env file.');
+    // Validate API key - only check if it's empty
+    if (!apiKey || apiKey.trim() === '') {
+      setMapError('Google Maps API key not configured.');
       return;
     }
 
-    // Check if Google Maps is already loaded
-    if (window.google?.maps) {
+    // Check if Google Maps is already loaded with all required constructors
+    if (window.google?.maps?.Map && window.google.maps.Marker && window.google.maps.InfoWindow) {
       setMapLoaded(true);
       return;
     }
@@ -237,7 +326,7 @@ export default function SosActive() {
     const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
     if (existingScript) {
       const checkLoaded = setInterval(() => {
-        if (window.google?.maps) {
+        if (window.google?.maps?.Map && window.google.maps.Marker && window.google.maps.InfoWindow) {
           clearInterval(checkLoaded);
           setMapLoaded(true);
         }
@@ -245,17 +334,17 @@ export default function SosActive() {
       
       setTimeout(() => {
         clearInterval(checkLoaded);
-        if (!window.google?.maps) {
+        if (!window.google?.maps?.Map) {
           setMapError('Google Maps failed to load. Please check your API key configuration.');
         }
-      }, 5000);
+      }, 10000); // Increased timeout to 10 seconds
       
       return;
     }
 
-    // Load Google Maps script with async loading
+    // Load Google Maps script
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
     script.async = true;
     script.defer = true;
     
@@ -265,9 +354,9 @@ export default function SosActive() {
     };
 
     script.onload = () => {
-      // Additional check to ensure maps library is loaded
+      // Additional check to ensure maps library is fully loaded with all constructors
       const checkMaps = setInterval(() => {
-        if (window.google?.maps) {
+        if (window.google?.maps?.Map && window.google.maps.Marker && window.google.maps.InfoWindow) {
           clearInterval(checkMaps);
           setMapLoaded(true);
           setMapError(null);
@@ -276,10 +365,10 @@ export default function SosActive() {
 
       setTimeout(() => {
         clearInterval(checkMaps);
-        if (!window.google?.maps) {
-          setMapError('Google Maps loaded but maps library not available. Please check your API key configuration.');
+        if (!window.google?.maps?.Map) {
+          setMapError('Google Maps loaded but Map constructor not available. Please check your API key configuration.');
         }
-      }, 5000);
+      }, 10000); // Increased timeout to 10 seconds
     };
 
     document.head.appendChild(script);
@@ -289,9 +378,25 @@ export default function SosActive() {
     };
   }, []);
 
-  // Initialize map
+  // Initialize map - only called once
   const initializeMap = useCallback(() => {
-    if (!mapRef.current || !alertData || !window.google?.maps) {
+    // Prevent re-initialization if map is already initialized
+    if (mapInitializedRef.current) {
+      return;
+    }
+
+    if (!mapRef.current || !alertData) {
+      return;
+    }
+
+    // Check if Google Maps is fully loaded with all required constructors
+    if (!window.google?.maps?.Map) {
+      console.warn('Google Maps Map constructor not available yet');
+      return;
+    }
+
+    if (!window.google.maps.Marker) {
+      console.warn('Google Maps Marker constructor not available yet');
       return;
     }
 
@@ -317,9 +422,13 @@ export default function SosActive() {
         return;
       }
 
+      // Determine map center - use alert location initially, user location will be added later
+      const centerLat = lat;
+      const centerLng = lng;
+
       // Create map instance
       const map = new window.google.maps.Map(mapRef.current, {
-        center: { lat, lng },
+        center: { lat: centerLat, lng: centerLng },
         zoom: 15,
         mapTypeControl: true,
         streetViewControl: false,
@@ -336,7 +445,7 @@ export default function SosActive() {
 
       mapInstanceRef.current = map;
 
-      // Create marker
+      // Create emergency location marker (red)
       const marker = new window.google.maps.Marker({
         position: { lat, lng },
         map: map,
@@ -354,7 +463,7 @@ export default function SosActive() {
 
       markerRef.current = marker;
 
-      // Create info window
+      // Create info window for emergency location
       const infoWindow = new window.google.maps.InfoWindow({
         content: `
           <div style="padding: 8px;">
@@ -371,6 +480,9 @@ export default function SosActive() {
 
       // Open info window by default
       infoWindow.open(map, marker);
+
+      // Mark map as initialized
+      mapInitializedRef.current = true;
       setMapError(null);
 
     } catch (error: any) {
@@ -388,23 +500,102 @@ export default function SosActive() {
     }
   }, [alertData]);
 
-  // Initialize map when dependencies are ready
+  // Initialize map when dependencies are ready - only once
   useEffect(() => {
-    if (mapLoaded && alertData && !loading && !mapError) {
+    if (mapLoaded && alertData && !loading && !mapError && !mapInitializedRef.current) {
+      // Verify Map constructor is available before initializing
+      if (!window.google?.maps?.Map) {
+        console.warn('Map constructor not available, waiting...');
+        return;
+      }
+      
       // Small delay to ensure DOM is ready
       const timer = setTimeout(() => {
-        initializeMap();
-      }, 100);
+        // Double-check before initializing
+        if (window.google?.maps?.Map && mapRef.current && !mapInitializedRef.current) {
+          initializeMap();
+        }
+      }, 200);
 
       return () => clearTimeout(timer);
     }
   }, [mapLoaded, alertData, loading, mapError, initializeMap]);
 
+  // Add or update user location marker when location is available
+  useEffect(() => {
+    if (!mapInitializedRef.current || !mapInstanceRef.current || !userLocation || !window.google?.maps) {
+      return;
+    }
+
+    const map = mapInstanceRef.current;
+    const latValue = alertData?.location?.latitude || alertData?.latitude || alertData?.lat;
+    const lngValue = alertData?.location?.longitude || alertData?.longitude || alertData?.lng;
+    
+    if (!latValue || !lngValue) {
+      return;
+    }
+
+    const lat = parseFloat(String(latValue));
+    const lng = parseFloat(String(lngValue));
+
+    // If user marker doesn't exist, create it
+    if (!userMarkerRef.current) {
+      const userMarker = new window.google.maps.Marker({
+        position: { lat: userLocation.lat, lng: userLocation.lng },
+        map: map,
+        title: 'Your Current Location',
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#2563EB',
+          fillOpacity: 1,
+          strokeColor: '#FFFFFF',
+          strokeWeight: 2,
+        },
+        zIndex: 1000,
+      });
+
+      userMarkerRef.current = userMarker;
+
+      // Create info window for user location
+      const userInfoWindow = new window.google.maps.InfoWindow({
+        content: `
+          <div style="padding: 8px;">
+            <h3 style="margin: 0 0 4px 0; font-size: 14px; font-weight: bold;">Your Location</h3>
+            <p style="margin: 0; font-size: 12px; color: #666;">You are here</p>
+            <p style="margin: 4px 0 0 0; font-size: 11px; color: #999;">${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}</p>
+          </div>
+        `
+      });
+
+      userMarker.addListener('click', () => {
+        userInfoWindow.open(map, userMarker);
+      });
+
+      // Fit bounds to show both markers only once when user marker is first created
+      const bounds = new window.google.maps.LatLngBounds();
+      bounds.extend({ lat, lng });
+      bounds.extend({ lat: userLocation.lat, lng: userLocation.lng });
+      map.fitBounds(bounds);
+    } else {
+      // Just update the position if marker already exists
+      userMarkerRef.current.setPosition({ lat: userLocation.lat, lng: userLocation.lng });
+    }
+  }, [userLocation, alertData]);
+
   // Cleanup map on unmount
   useEffect(() => {
     return () => {
+      mapInitializedRef.current = false;
       if (markerRef.current) {
         markerRef.current.setMap(null);
+      }
+      if (userMarkerRef.current) {
+        userMarkerRef.current.setMap(null);
+      }
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
       }
       if (mapInstanceRef.current) {
         // Google Maps doesn't require explicit cleanup for the map instance
@@ -547,6 +738,54 @@ export default function SosActive() {
                 <div className="flex items-center gap-2">
                   <i className="ri-map-pin-2-line text-xs text-gray-600"></i>
                   <p className="text-xs text-gray-600 truncate">{alertData?.address || 'Location being determined...'}</p>
+                </div>
+                {userLocation && (
+                  <div className="flex items-center gap-2 mt-1 pt-1 border-t border-gray-200">
+                    <i className="ri-user-location-line text-xs text-blue-600"></i>
+                    <p className="text-xs text-blue-600 font-medium">Your location is being tracked</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Location Permission Request Overlay */}
+        {locationPermission === 'prompt' && !userLocation && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-20">
+            <div className="bg-white rounded-2xl p-6 max-w-sm mx-4 shadow-2xl">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i className="ri-map-pin-line text-3xl text-blue-600"></i>
+              </div>
+              <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Location Permission Required</h3>
+              <p className="text-sm text-gray-600 text-center mb-6">
+                We need your location to show your position on the map and help emergency responders find you quickly.
+              </p>
+              <button
+                onClick={requestLocationPermission}
+                className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors"
+              >
+                Allow Location Access
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Location Error Overlay */}
+        {locationPermission === 'denied' && locationError && (
+          <div className="absolute bottom-4 left-4 right-4 z-20">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 shadow-lg">
+              <div className="flex items-start gap-3">
+                <i className="ri-error-warning-line text-xl text-yellow-600 flex-shrink-0 mt-0.5"></i>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-yellow-800 mb-1">Location Access Denied</p>
+                  <p className="text-xs text-yellow-700 mb-3">{locationError}</p>
+                  <button
+                    onClick={requestLocationPermission}
+                    className="text-xs text-yellow-800 underline font-medium hover:text-yellow-900"
+                  >
+                    Try Again
+                  </button>
                 </div>
               </div>
             </div>

@@ -17,13 +17,24 @@ export default function Login() {
     
     setLoading(true);
     try {
+      console.log('[Login] Attempting login for:', identifier);
       await Auth.login(identifier, password);
+      console.log('[Login] Login successful');
       navigate('/home-screen');
     } catch (err: any) {
-      if (err.message?.includes('Email not verified')) {
+      console.error('[Login] Login error:', err);
+      const errorMessage = err?.message || String(err) || 'Login failed';
+      
+      if (errorMessage.includes('Email not verified')) {
         alert('Please verify your email before logging in. Check your email for the verification link.');
+      } else if (errorMessage.includes('Cannot connect to server') || 
+                 errorMessage.includes('Unable to resolve host') ||
+                 errorMessage.includes('Network error')) {
+        alert(`Connection Error:\n\n${errorMessage}\n\nPlease check:\n- Your internet connection\n- The backend server is running\n- Try again in a few moments`);
+      } else if (errorMessage.includes('Invalid credentials')) {
+        alert('Invalid email/employee ID or password. Please check your credentials and try again.');
       } else {
-        alert(err.message || 'Login failed. Please check your credentials.');
+        alert(`Login failed:\n\n${errorMessage}\n\nPlease check your credentials and try again.`);
       }
     } finally {
       setLoading(false);

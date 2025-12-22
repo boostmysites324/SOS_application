@@ -3,14 +3,21 @@ import type { HttpResponse } from '@capacitor/core';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
+// API base URL - directly configured
 const API_BASE = 'https://sos-backend-l46b.onrender.com';
+console.log('[API] API_BASE configured:', API_BASE);
 
 function getToken(): string | null {
   return localStorage.getItem('auth_token');
 }
 
 export async function api<T = any>(path: string, options: { method?: HttpMethod; body?: any; auth?: boolean } = {}): Promise<T> {
-  const url = `${API_BASE}${path}`;
+  // Normalize path: ensure it starts with /
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const url = `${API_BASE}${normalizedPath}`;
+  
+  console.log(`[API] ${options.method || 'GET'} ${url}`);
+  
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.auth) {
     const token = getToken();
@@ -29,29 +36,99 @@ export async function api<T = any>(path: string, options: { method?: HttpMethod;
 
       if (response.status >= 400) {
         const err = response.data || {};
-        throw new Error(err.error || `Request failed: ${response.status}`);
+        const errorMsg = typeof err === 'object' && err.error ? err.error : `Request failed: ${response.status}`;
+        console.error(`[API] Request failed: ${response.status}`, err);
+        throw new Error(errorMsg);
       }
       
       return response.data as T;
     } catch (error: any) {
-      // Handle network errors
-      if (error.message) {
+      // Handle network errors with better messages
+      const errorMessage = error.message || String(error) || '';
+      const errorString = errorMessage.toLowerCase();
+      
+      console.error('[API] Request error:', errorMessage, error);
+      
+      // DNS resolution errors (Android-specific patterns)
+      if (errorString.includes('unable to resolve host') || 
+          errorString.includes('no address associated with hostname') ||
+          errorString.includes('enotfound') ||
+          errorString.includes('getaddrinfo') ||
+          errorString.includes('name or service not known') ||
+          errorString.includes('host not found')) {
+        throw new Error(
+          `Cannot connect to server. Please check:\n` +
+          `1. Your internet connection\n` +
+          `2. The backend server is running\n` +
+          `3. The API URL is correct: ${API_BASE}\n\n` +
+          `If the problem persists, try:\n` +
+          `- Restarting the app\n` +
+          `- Checking your network settings\n` +
+          `- Verifying the backend URL is accessible`
+        );
+      }
+      
+      // Connection timeout errors
+      if (errorString.includes('timeout') || errorString.includes('timed out')) {
+        throw new Error(
+          'Connection timeout. The server may be down or unreachable.\n' +
+          'If using Render free tier, the server may be sleeping. Please wait a moment and try again.'
+        );
+      }
+      
+      // SSL/Certificate errors
+      if (errorString.includes('ssl') || errorString.includes('certificate') || errorString.includes('handshake')) {
+        throw new Error('SSL certificate error. Please check your network security settings.');
+      }
+      
+      // Connection refused errors
+      if (errorString.includes('connection refused') || errorString.includes('econnrefused')) {
+        throw new Error('Connection refused. The server may be down or not accepting connections.');
+      }
+      
+      // Other network errors
+      if (errorString.includes('network') || errorString.includes('connection')) {
+        throw new Error('Network error. Please check your internet connection and try again.');
+      }
+      
+      // If error has a message, use it
+      if (errorMessage) {
         throw error;
       }
+      
       throw new Error('Network request failed. Please check your internet connection.');
     }
   } else {
     // Use standard fetch for web
-    const res = await fetch(url, {
-      method: options.method || 'GET',
-      headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Request failed: ${res.status}`);
+    try {
+      const res = await fetch(url, {
+        method: options.method || 'GET',
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Request failed: ${res.status}`);
+      }
+      return res.json();
+    } catch (error: any) {
+      // Handle network errors for web
+      const errorMessage = error.message || '';
+      
+      // DNS resolution errors
+      if (errorMessage.includes('Failed to fetch') || 
+          errorMessage.includes('NetworkError') ||
+          errorMessage.includes('ERR_NAME_NOT_RESOLVED')) {
+        throw new Error(
+          `Cannot connect to server. Please check:\n` +
+          `1. Your internet connection\n` +
+          `2. The backend server is running\n` +
+          `3. The API URL is correct: ${API_BASE}`
+        );
+      }
+      
+      throw error;
     }
-    return res.json();
   }
 }
 
